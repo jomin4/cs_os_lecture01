@@ -231,6 +231,67 @@ register({
   }
 });
 
+/* ── Viz 4: 스핀락 vs 블로킹 락 (CPU 낭비) ──────── */
+register({
+  id:'spin', chapter:'Lecture06', icon:'⏳',
+  title:'스핀락 vs 블로킹', tag:'busy-wait',
+  mount(root){
+    let mode='spin', lock=false, wasted=0, logs=[], timer=null;
+    const T=[{id:'T1',s:'idle',sp:0},{id:'T2',s:'idle',sp:0},{id:'T3',s:'idle',sp:0},{id:'T4',s:'idle',sp:0}];
+    const Q=[];
+    root.innerHTML=`
+      <div class="toolbar">
+        <button class="mode" id="ms">스핀락 (busy-wait)</button>
+        <button class="mode" id="mb">블로킹 락 (sleep)</button>
+        <span style="flex:1"></span>
+        <button class="mode" id="pl">▶ 자동 진행</button>
+        <button class="mode" id="rs">초기화</button></div>
+      <div class="bar"><code>lock =</code><span class="pill" id="lk"></span>
+        <span style="flex:1"></span><span class="hint">CPU 낭비</span>
+        <div style="width:170px;height:11px;background:var(--line);border-radius:6px;overflow:hidden">
+          <div id="cpu" style="height:100%;width:0;background:var(--red-ink);transition:.2s"></div></div>
+        <span class="hint" id="wn" style="width:42px">0</span></div>
+      <div class="procgrid" id="pg" style="grid-template-columns:repeat(4,1fr)"></div>
+      <div class="log" id="lg"></div>`;
+    const $=s=>root.querySelector(s);
+    const log=m=>{logs.unshift('▸ '+m); if(logs.length>6)logs.pop();
+      $('#lg').innerHTML=logs.map((l,i)=>`<div style="opacity:${1-i*.13}">${l}</div>`).join('');};
+    function acquire(i){const t=T[i]; if(t.s!=='idle')return;
+      if(!lock){lock=true; t.s='hold'; log(`${t.id}: 락 획득 → 임계구역 진입`);}
+      else{t.s='wait'; Q.push(i); log(`${t.id}: 락 사용 중 → 대기`);} draw();}
+    function release(i){const t=T[i]; lock=false; t.s='idle'; t.sp=0; log(`${t.id}: release (lock=false)`);
+      if(Q.length){const n=Q.shift(); T[n].s='hold'; T[n].sp=0; lock=true; log(`${T[n].id}: 대기 끝 → 락 획득`);} draw();}
+    function tick(){ if(!document.body.contains(root)){clearInterval(timer); return;}
+      const w=T.filter(t=>t.s==='wait');
+      if(mode==='spin' && w.length){ w.forEach(t=>t.sp++); wasted+=w.length; }
+      draw();}
+    function draw(){
+      $('#lk').textContent=lock; $('#lk').className='pill '+(lock?'g-amber':'g-teal');
+      $('#cpu').style.width=Math.min(100,wasted)+'%'; $('#wn').textContent=wasted;
+      $('#pg').innerHTML=T.map((t,i)=>{
+        let cls,st,btn;
+        if(t.s==='hold'){cls='g-teal'; st='임계구역 실행'; btn=`<button class="btn ghost" data-r="${i}">release</button>`;}
+        else if(t.s==='wait'){
+          cls=mode==='spin'?'g-amber':'g-gray';
+          st=mode==='spin'?`spin ×${t.sp} · CPU 낭비`:'sleep · 대기 큐';
+          btn=`<div class="st" style="margin-top:11px">대기 중</div>`;
+        } else {cls='g-gray'; st='유휴'; btn=`<button class="btn" data-a="${i}">락 요청</button>`;}
+        return `<div class="card ${cls}"><h3>${t.id}</h3><div class="st">${st}</div>${btn}</div>`;
+      }).join('');
+      $('#pg').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>acquire(+b.dataset.a));
+      $('#pg').querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>release(+b.dataset.r));
+    }
+    function reset(){lock=false; wasted=0; logs=[]; Q.length=0; $('#lg').innerHTML='';
+      T.forEach(t=>{t.s='idle'; t.sp=0;}); draw();}
+    function setMode(m){mode=m; $('#ms').className='mode'+(m==='spin'?' on':''); $('#mb').className='mode'+(m==='block'?' on':''); draw();}
+    $('#ms').onclick=()=>setMode('spin'); $('#mb').onclick=()=>setMode('block');
+    $('#rs').onclick=reset;
+    $('#pl').onclick=e=>{ if(timer){clearInterval(timer); timer=null; e.target.textContent='▶ 자동 진행'; e.target.classList.remove('on');}
+      else{timer=setInterval(tick,600); e.target.textContent='⏸ 멈춤'; e.target.classList.add('on');}};
+    setMode('spin');
+  }
+});
+
 /* ── 라우팅 ────────────────────────────────────── */
 const nav=document.getElementById('navlist');
 let chap='';
